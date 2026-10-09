@@ -1,4 +1,4 @@
 @echo off
-cd /d "%~dp0"
-set PYTHONPATH=src
+setlocal
+set PYTHONPATH=%~dp0src
 python -m emulator %*

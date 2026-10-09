@@ -1,3 +1,2 @@
 #!/bin/sh
-cd "$(dirname "$0")" || exit 1
-PYTHONPATH=src exec python3 -m emulator "$@"
+PYTHONPATH="$(dirname "$0")/src" exec python3 -m emulator "$@"
