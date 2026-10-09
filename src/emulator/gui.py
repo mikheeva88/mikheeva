@@ -2,8 +2,11 @@
 
 import tkinter as tk
 from tkinter import scrolledtext
+from typing import Iterator, Optional, Tuple
 
-from emulator.commands import execute
+from emulator.commands import CommandResult, execute
+from emulator.config import Config, format_debug
+from emulator.script import ScriptError, load_script, run_script
 from emulator.system_info import (
     format_prompt,
     format_title,
@@ -17,28 +20,37 @@ FG_COLOR = "#d4d4d4"
 ERROR_COLOR = "#f48771"
 FONT = ("Courier New", 12)
 ERROR_TAG = "error"
+STEP_DELAY_MS = 300
 WELCOME_TEXT = (
     "Эмулятор командной строки. Доступные команды: ls, cd, exit.\n"
 )
+SCRIPT_DONE_TEXT = "Стартовый скрипт выполнен.\n"
 
 
 class EmulatorApp:
     """Окно эмулятора: область вывода и строка ввода (REPL)."""
 
-    def __init__(self, root: tk.Tk) -> None:
+    def __init__(self, root: tk.Tk, config: Optional[Config] = None) -> None:
         """Создать окно, задать заголовок по данным реальной ОС.
 
         Args:
             root: корневое окно tkinter.
+            config: параметры запуска; если None, используются
+                значения по умолчанию.
         """
         self.root = root
+        self.config = config or Config()
         username = get_username()
         hostname = get_hostname()
         self.prompt = format_prompt(username, hostname)
         self.root.title(format_title(username, hostname))
         self.root.geometry(WINDOW_SIZE)
+        self._steps: Iterator[Tuple[str, CommandResult]] = iter(())
         self._build_widgets()
         self._print(WELCOME_TEXT)
+        self._print(format_debug(self.config) + "\n")
+        if self.config.script_path:
+            self.root.after(STEP_DELAY_MS, self._start_script)
 
     def _build_widgets(self) -> None:
         """Создать область вывода, приглашение и поле ввода."""
@@ -74,13 +86,44 @@ class EmulatorApp:
         self.output.see(tk.END)
         self.output.config(state=tk.DISABLED)
 
-    def _on_enter(self, _event: tk.Event) -> None:
-        """Обработать нажатие Enter: выполнить введённую команду."""
-        line = self.entry.get()
-        self.entry.delete(0, tk.END)
+    def _show_exchange(self, line: str, result: CommandResult) -> None:
+        """Показать «диалог»: введённую строку и результат команды.
+
+        Args:
+            line: строка, введённая пользователем или взятая из скрипта.
+            result: результат выполнения команды.
+        """
         self._print(f"{self.prompt} {line}\n")
-        result = execute(line)
         if result.output:
             self._print(result.output + "\n", result.is_error)
         if result.should_exit:
             self.root.destroy()
+
+    def _on_enter(self, _event: tk.Event) -> None:
+        """Обработать нажатие Enter: выполнить введённую команду."""
+        line = self.entry.get()
+        self.entry.delete(0, tk.END)
+        self._show_exchange(line, execute(line))
+
+    def _start_script(self) -> None:
+        """Прочитать стартовый скрипт и начать его выполнение."""
+        path = self.config.script_path
+        try:
+            lines = load_script(path)
+        except ScriptError as error:
+            self._print(f"{error}\n", True)
+            return
+        self._print(f"Выполнение стартового скрипта: {path}\n")
+        self._steps = run_script(lines)
+        self._next_step()
+
+    def _next_step(self) -> None:
+        """Выполнить очередную строку скрипта и запланировать следующую."""
+        step = next(self._steps, None)
+        if step is None:
+            self._print(SCRIPT_DONE_TEXT)
+            return
+        line, result = step
+        self._show_exchange(line, result)
+        if not result.should_exit:
+            self.root.after(STEP_DELAY_MS, self._next_step)
