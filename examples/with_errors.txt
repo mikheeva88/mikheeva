@@ -1,0 +1,10 @@
+# Строки с ошибками пропускаются, выполнение продолжается
+ls first
+
+foo bar
+cd second
+exit now
+   
+ls    -a     -l
+unknown_command
+cd third

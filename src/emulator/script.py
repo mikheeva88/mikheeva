@@ -1,0 +1,66 @@
+"""Загрузка и выполнение стартового скрипта эмулятора."""
+
+from typing import Iterable, Iterator, List, Tuple
+
+from emulator.commands import CommandResult, execute
+
+COMMENT_PREFIX = "#"
+SCRIPT_ENCODING = "utf-8-sig"
+
+
+class ScriptError(Exception):
+    """Ошибка чтения стартового скрипта."""
+
+
+def load_script(path: str) -> List[str]:
+    """Прочитать стартовый скрипт и вернуть его строки.
+
+    Args:
+        path: путь к текстовому файлу в кодировке UTF-8.
+
+    Returns:
+        Список строк файла без символов перевода строки.
+
+    Raises:
+        ScriptError: если файл не найден или не читается.
+    """
+    try:
+        with open(path, encoding=SCRIPT_ENCODING) as script_file:
+            return script_file.read().splitlines()
+    except (OSError, UnicodeDecodeError) as error:
+        message = f"не удалось прочитать скрипт '{path}': {error}"
+        raise ScriptError(message) from error
+
+
+def is_skipped(line: str) -> bool:
+    """Проверить, что строку не нужно выполнять.
+
+    Пропускаются пустые строки и комментарии (начинаются с «#»).
+    """
+    stripped = line.strip()
+    return not stripped or stripped.startswith(COMMENT_PREFIX)
+
+
+def run_script(
+    lines: Iterable[str],
+) -> Iterator[Tuple[str, CommandResult]]:
+    """Последовательно выполнять строки скрипта.
+
+    Строки с ошибками не прерывают выполнение: их результат
+    (с флагом is_error) возвращается, и работа идёт дальше.
+    После команды exit выполнение останавливается.
+
+    Args:
+        lines: строки скрипта.
+
+    Yields:
+        Пары (строка без лишних пробелов, результат команды).
+    """
+    for line in lines:
+        if is_skipped(line):
+            continue
+        text = line.strip()
+        result = execute(text)
+        yield text, result
+        if result.should_exit:
+            return
