@@ -5,10 +5,12 @@ set "VFSDIR=%ROOT%\vfs_data"
 set "EX=%ROOT%\examples"
 python "%ROOT%\tools\make_vfs.py" "%VFSDIR%"
 
-echo [1/3] Stage 4 commands on deep.zip: ls, cd, echo, tac (modes and errors)
+echo [1/4] ls, cd, echo, tac on deep.zip (all modes and errors)
 call "%RUN%" --vfs "%VFSDIR%\deep.zip" --script "%EX%\main_commands.txt"
-echo [2/3] Same script on several.zip (other files, missing paths give errors)
+echo [2/4] Same script on several.zip (other files, more errors)
 call "%RUN%" --vfs "%VFSDIR%\several.zip" --script "%EX%\main_commands.txt"
-echo [3/3] Same script without --vfs (ls, cd and tac report that VFS is not loaded)
+echo [3/4] Same script without --vfs (empty VFS)
 call "%RUN%" --script "%EX%\main_commands.txt"
+echo [4/4] exit inside a script (window closes)
+call "%RUN%" --vfs "%VFSDIR%\deep.zip" --script "%EX%\with_exit.txt"
 pause

@@ -1,2 +1,0 @@
-#!/bin/sh
-PYTHONPATH="$(dirname "$0")/src" exec python3 -m emulator "$@"
