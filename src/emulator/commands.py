@@ -1,25 +1,23 @@
-"""Команды эмулятора: заглушки ls и cd, а также команда exit."""
+"""Команды эмулятора: ls, cd (заглушки), exit и служебные команды VFS."""
 
-from typing import Callable, Dict, List, NamedTuple
+from typing import Callable, Dict, List, Optional
 
+from emulator.result import CommandResult
 from emulator.shell_parser import parse_line
+from emulator.vfs import Vfs
+from emulator.vfs_commands import (
+    INFO_NAME,
+    SHOW_NAME,
+    TREE_NAME,
+    cmd_vfs_info,
+    cmd_vfs_show,
+    cmd_vfs_tree,
+)
 
 NO_ARGS_TEXT = "(нет)"
 EXIT_NAME = "exit"
 
-
-class CommandResult(NamedTuple):
-    """Результат выполнения команды.
-
-    Attributes:
-        output: текст, который нужно показать пользователю.
-        is_error: True, если текст является сообщением об ошибке.
-        should_exit: True, если эмулятор нужно завершить.
-    """
-
-    output: str
-    is_error: bool = False
-    should_exit: bool = False
+Handler = Callable[[List[str], Optional[Vfs]], CommandResult]
 
 
 def format_stub(name: str, args: List[str]) -> str:
@@ -36,17 +34,17 @@ def format_stub(name: str, args: List[str]) -> str:
     return f"Команда: {name}\nАргументы ({len(args)}): {args_text}"
 
 
-def cmd_ls(args: List[str]) -> CommandResult:
+def cmd_ls(args: List[str], _vfs: Optional[Vfs]) -> CommandResult:
     """Заглушка команды ls: выводит своё имя и аргументы."""
     return CommandResult(format_stub("ls", args))
 
 
-def cmd_cd(args: List[str]) -> CommandResult:
+def cmd_cd(args: List[str], _vfs: Optional[Vfs]) -> CommandResult:
     """Заглушка команды cd: выводит своё имя и аргументы."""
     return CommandResult(format_stub("cd", args))
 
 
-def cmd_exit(args: List[str]) -> CommandResult:
+def cmd_exit(args: List[str], _vfs: Optional[Vfs]) -> CommandResult:
     """Команда exit: завершает работу эмулятора.
 
     Если переданы аргументы, возвращает ошибку и не завершает работу.
@@ -57,18 +55,22 @@ def cmd_exit(args: List[str]) -> CommandResult:
     return CommandResult("", should_exit=True)
 
 
-COMMANDS: Dict[str, Callable[[List[str]], CommandResult]] = {
+COMMANDS: Dict[str, Handler] = {
     "ls": cmd_ls,
     "cd": cmd_cd,
     EXIT_NAME: cmd_exit,
+    INFO_NAME: cmd_vfs_info,
+    TREE_NAME: cmd_vfs_tree,
+    SHOW_NAME: cmd_vfs_show,
 }
 
 
-def execute(line: str) -> CommandResult:
+def execute(line: str, vfs: Optional[Vfs] = None) -> CommandResult:
     """Разобрать строку ввода и выполнить соответствующую команду.
 
     Args:
         line: строка, введённая пользователем.
+        vfs: загруженная VFS или None, если она не задана.
 
     Returns:
         CommandResult. Для пустой строки вывод пустой; для неизвестной
@@ -81,4 +83,4 @@ def execute(line: str) -> CommandResult:
     if handler is None:
         message = f"{parsed.command}: команда не найдена"
         return CommandResult(message, is_error=True)
-    return handler(parsed.args)
+    return handler(parsed.args, vfs)
