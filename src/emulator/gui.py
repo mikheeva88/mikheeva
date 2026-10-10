@@ -2,19 +2,19 @@
 
 import tkinter as tk
 from tkinter import scrolledtext
-from typing import Iterator, Optional, Tuple
+from typing import Iterator, Optional
 
 from emulator.commands import execute
 from emulator.config import Config, format_debug
-from emulator.result import CommandResult
-from emulator.script import ScriptError, load_script, run_script
+from emulator.script import ScriptError, iter_commands, load_script
+from emulator.session import Session
 from emulator.system_info import (
     format_prompt,
     format_title,
     get_hostname,
     get_username,
 )
-from emulator.vfs import Vfs, VfsError, load_vfs
+from emulator.vfs import VfsError, load_vfs
 
 WINDOW_SIZE = "800x500"
 BG_COLOR = "#1e1e1e"
@@ -25,7 +25,7 @@ ERROR_TAG = "error"
 STEP_DELAY_MS = 300
 WELCOME_TEXT = (
     "Эмулятор командной строки.\n"
-    "Команды: ls, cd, exit, vfs-info, vfs-tree, vfs-show.\n"
+    "Команды: ls, cd, echo, tac, exit, vfs-info, vfs-tree, vfs-show.\n"
 )
 SCRIPT_DONE_TEXT = "Стартовый скрипт выполнен.\n"
 
@@ -43,13 +43,12 @@ class EmulatorApp:
         """
         self.root = root
         self.config = config or Config()
-        username = get_username()
-        hostname = get_hostname()
-        self.prompt = format_prompt(username, hostname)
-        self.root.title(format_title(username, hostname))
+        self.username = get_username()
+        self.hostname = get_hostname()
+        self.session = Session()
+        self.root.title(format_title(self.username, self.hostname))
         self.root.geometry(WINDOW_SIZE)
-        self.vfs: Optional[Vfs] = None
-        self._steps: Iterator[Tuple[str, CommandResult]] = iter(())
+        self._steps: Iterator[str] = iter(())
         self._build_widgets()
         self._print(WELCOME_TEXT)
         self._print(format_debug(self.config) + "\n")
@@ -57,17 +56,21 @@ class EmulatorApp:
         if self.config.script_path:
             self.root.after(STEP_DELAY_MS, self._start_script)
 
+    def _prompt(self) -> str:
+        """Вернуть приглашение с текущим каталогом."""
+        return format_prompt(self.username, self.hostname, self.session.cwd)
+
     def _load_vfs(self) -> None:
         """Загрузить VFS из ZIP-архива в память, если задан --vfs."""
         path = self.config.vfs_path
         if path is None:
             return
         try:
-            self.vfs = load_vfs(path)
+            self.session.vfs = load_vfs(path)
         except VfsError as error:
             self._print(f"{error}\n", True)
             return
-        stats = self.vfs.stats()
+        stats = self.session.vfs.stats()
         self._print(
             f"VFS загружена в память: {path} "
             f"(каталогов: {stats.dirs}, файлов: {stats.files})\n"
@@ -83,9 +86,10 @@ class EmulatorApp:
         self.output.pack(fill=tk.BOTH, expand=True)
         bottom = tk.Frame(self.root, bg=BG_COLOR)
         bottom.pack(fill=tk.X)
-        tk.Label(
-            bottom, text=self.prompt, bg=BG_COLOR, fg=FG_COLOR, font=FONT,
-        ).pack(side=tk.LEFT)
+        self.prompt_label = tk.Label(
+            bottom, text=self._prompt(), bg=BG_COLOR, fg=FG_COLOR, font=FONT,
+        )
+        self.prompt_label.pack(side=tk.LEFT)
         self.entry = tk.Entry(
             bottom, bg=BG_COLOR, fg=FG_COLOR, font=FONT,
             insertbackground=FG_COLOR, relief=tk.FLAT,
@@ -107,24 +111,33 @@ class EmulatorApp:
         self.output.see(tk.END)
         self.output.config(state=tk.DISABLED)
 
-    def _show_exchange(self, line: str, result: CommandResult) -> None:
-        """Показать «диалог»: введённую строку и результат команды.
+    def _run_line(self, line: str) -> bool:
+        """Выполнить строку и показать «диалог»: ввод и результат.
+
+        Приглашение в выводе берётся до выполнения команды, после
+        выполнения обновляется (текущий каталог мог измениться).
 
         Args:
             line: строка, введённая пользователем или взятая из скрипта.
-            result: результат выполнения команды.
+
+        Returns:
+            True, если эмулятор завершает работу (команда exit).
         """
-        self._print(f"{self.prompt} {line}\n")
+        prompt = self._prompt()
+        result = execute(line, self.session)
+        self._print(f"{prompt} {line}\n")
         if result.output:
             self._print(result.output + "\n", result.is_error)
+        self.prompt_label.config(text=self._prompt())
         if result.should_exit:
             self.root.destroy()
+        return result.should_exit
 
     def _on_enter(self, _event: tk.Event) -> None:
         """Обработать нажатие Enter: выполнить введённую команду."""
         line = self.entry.get()
         self.entry.delete(0, tk.END)
-        self._show_exchange(line, execute(line, self.vfs))
+        self._run_line(line)
 
     def _start_script(self) -> None:
         """Прочитать стартовый скрипт и начать его выполнение."""
@@ -135,16 +148,14 @@ class EmulatorApp:
             self._print(f"{error}\n", True)
             return
         self._print(f"Выполнение стартового скрипта: {path}\n")
-        self._steps = run_script(lines, self.vfs)
+        self._steps = iter_commands(lines)
         self._next_step()
 
     def _next_step(self) -> None:
         """Выполнить очередную строку скрипта и запланировать следующую."""
-        step = next(self._steps, None)
-        if step is None:
+        line = next(self._steps, None)
+        if line is None:
             self._print(SCRIPT_DONE_TEXT)
             return
-        line, result = step
-        self._show_exchange(line, result)
-        if not result.should_exit:
+        if not self._run_line(line):
             self.root.after(STEP_DELAY_MS, self._next_step)

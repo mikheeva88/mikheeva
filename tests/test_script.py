@@ -4,7 +4,14 @@ import os
 import tempfile
 import unittest
 
-from emulator.script import ScriptError, is_skipped, load_script, run_script
+from emulator.script import (
+    ScriptError,
+    is_skipped,
+    iter_commands,
+    load_script,
+    run_script,
+)
+from emulator.session import Session
 from emulator.vfs import load_vfs
 from zip_helper import make_zip
 
@@ -68,27 +75,44 @@ class TestIsSkipped(unittest.TestCase):
             self.assertFalse(is_skipped(line), repr(line))
 
 
+class TestIterCommands(unittest.TestCase):
+    """Проверка выбора команд из строк скрипта."""
+
+    def test_filter(self):
+        """Пустые строки и комментарии отбрасываются, пробелы убираются."""
+        lines = ["# c", "", " echo a ", "  ", "ls"]
+        self.assertEqual(list(iter_commands(lines)), ["echo a", "ls"])
+
+
 class TestRunScript(unittest.TestCase):
     """Проверка выполнения строк скрипта."""
 
     def test_order_and_echo(self):
         """Строки выполняются по порядку, пробелы по краям убираются."""
-        results = list(run_script(["  ls  ", "# note", "", "cd x"]))
-        self.assertEqual([line for line, _ in results], ["ls", "cd x"])
-        self.assertIn("ls", results[0][1].output)
-        self.assertIn("x", results[1][1].output)
+        results = list(run_script(["  echo a  ", "# note", "", "echo b"]))
+        self.assertEqual([line for line, _ in results],
+                         ["echo a", "echo b"])
+        self.assertEqual(results[0][1].output, "a")
+        self.assertEqual(results[1][1].output, "b")
 
     def test_errors_do_not_stop(self):
         """Ошибочные строки не прерывают выполнение."""
-        results = list(run_script(["foo", "ls", "exit now", "cd a"]))
+        results = list(run_script(["foo", "echo", "exit now", "echo a"]))
         self.assertEqual(errors_of(results), ["foo", "exit now"])
         self.assertEqual(len(results), 4)
 
     def test_vfs_is_passed(self):
         """Команды скрипта получают загруженную VFS."""
         vfs = load_vfs(self.make_archive())
-        results = list(run_script(["vfs-info"], vfs))
+        results = list(run_script(["vfs-info"], Session(vfs=vfs)))
         self.assertFalse(results[0][1].is_error)
+
+    def test_cwd_is_kept_between_lines(self):
+        """Текущий каталог сохраняется между строками скрипта."""
+        vfs = load_vfs(self.make_archive())
+        lines = ["cd /", "ls"]
+        results = list(run_script(lines, Session(vfs=vfs)))
+        self.assertEqual(results[1][1].output, "a.txt")
 
     def make_archive(self):
         """Создать маленький архив во временной папке."""
@@ -100,8 +124,8 @@ class TestRunScript(unittest.TestCase):
 
     def test_exit_stops(self):
         """После exit остальные строки не выполняются."""
-        results = list(run_script(["ls", "exit", "cd a"]))
-        self.assertEqual([line for line, _ in results], ["ls", "exit"])
+        results = list(run_script(["echo", "exit", "echo a"]))
+        self.assertEqual([line for line, _ in results], ["echo", "exit"])
         self.assertTrue(results[-1][1].should_exit)
 
 
@@ -113,7 +137,7 @@ class TestExamples(unittest.TestCase):
         return list(run_script(load_script(example_path(name))))
 
     def test_basic(self):
-        """В basic.txt нет ошибок."""
+        """В basic.txt нет ошибок (VFS не нужна)."""
         results = self.run_example("basic.txt")
         self.assertEqual(errors_of(results), [])
         self.assertFalse(results[-1][1].should_exit)
@@ -123,7 +147,7 @@ class TestExamples(unittest.TestCase):
         results = self.run_example("with_errors.txt")
         expected = ["foo bar", "exit now", "unknown_command"]
         self.assertEqual(errors_of(results), expected)
-        self.assertEqual(results[-1][0], "cd third")
+        self.assertEqual(results[-1][0], "echo fourth")
 
     def test_with_exit(self):
         """В with_exit.txt выполнение останавливается на exit."""

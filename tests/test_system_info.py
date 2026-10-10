@@ -15,9 +15,11 @@ class TestFormatting(unittest.TestCase):
         self.assertEqual(title, "Эмулятор - [alice@pc1]")
 
     def test_prompt(self):
-        """Приглашение имеет вид «user@host:~$»."""
+        """Приглашение содержит текущий каталог (по умолчанию «/»)."""
         prompt = system_info.format_prompt("alice", "pc1")
-        self.assertEqual(prompt, "alice@pc1:~$")
+        self.assertEqual(prompt, "alice@pc1:/$")
+        prompt = system_info.format_prompt("alice", "pc1", "/home/alice")
+        self.assertEqual(prompt, "alice@pc1:/home/alice$")
 
 
 class TestRealData(unittest.TestCase):

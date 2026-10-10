@@ -28,6 +28,10 @@ def format_title(username: Optional[str], hostname: Optional[str]) -> str:
     return f"Эмулятор - [{username}@{hostname}]"
 
 
-def format_prompt(username: Optional[str], hostname: Optional[str]) -> str:
-    """Сформировать приглашение командной строки вида «user@host:~$»."""
-    return f"{username}@{hostname}:~$"
+def format_prompt(
+    username: Optional[str],
+    hostname: Optional[str],
+    cwd: str = "/",
+) -> str:
+    """Сформировать приглашение вида «user@host:/текущий/каталог$»."""
+    return f"{username}@{hostname}:{cwd}$"

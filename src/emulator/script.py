@@ -4,7 +4,7 @@ from typing import Iterable, Iterator, List, Optional, Tuple
 
 from emulator.commands import execute
 from emulator.result import CommandResult
-from emulator.vfs import Vfs
+from emulator.session import Session
 
 COMMENT_PREFIX = "#"
 SCRIPT_ENCODING = "utf-8-sig"
@@ -43,9 +43,23 @@ def is_skipped(line: str) -> bool:
     return not stripped or stripped.startswith(COMMENT_PREFIX)
 
 
+def iter_commands(lines: Iterable[str]) -> Iterator[str]:
+    """Выбрать из строк скрипта команды для выполнения.
+
+    Args:
+        lines: строки скрипта.
+
+    Yields:
+        Строки без лишних пробелов; пустые и комментарии пропущены.
+    """
+    for line in lines:
+        if not is_skipped(line):
+            yield line.strip()
+
+
 def run_script(
     lines: Iterable[str],
-    vfs: Optional[Vfs] = None,
+    session: Optional[Session] = None,
 ) -> Iterator[Tuple[str, CommandResult]]:
     """Последовательно выполнять строки скрипта.
 
@@ -55,16 +69,14 @@ def run_script(
 
     Args:
         lines: строки скрипта.
-        vfs: загруженная VFS или None, если она не задана.
+        session: состояние сеанса; если None, создаётся пустое.
 
     Yields:
         Пары (строка без лишних пробелов, результат команды).
     """
-    for line in lines:
-        if is_skipped(line):
-            continue
-        text = line.strip()
-        result = execute(text, vfs)
+    session = Session() if session is None else session
+    for text in iter_commands(lines):
+        result = execute(text, session)
         yield text, result
         if result.should_exit:
             return
