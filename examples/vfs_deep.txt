@@ -1,8 +1,13 @@
 # VFS с вложенностью не менее трёх уровней (deep.zip)
-vfs-info
-vfs-tree
-vfs-show /home/user/docs/archive/old.txt
-vfs-show home/user/docs/отчёт.txt
-# пустой каталог и путь «через файл»
-vfs-show /home/guest
-vfs-show /etc/config.txt/extra
+ls
+ls /home/user
+cd home/user/docs/archive
+ls
+tac old.txt
+cd /
+tac home/user/docs/отчёт.txt
+# пустой каталог ничего не выводит
+ls home/guest
+# ошибки: путь «через файл», каталога нет
+tac /etc/config.txt/extra
+cd /home/guest/nowhere

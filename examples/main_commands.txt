@@ -1,27 +1,19 @@
 # Этап 4: ls, cd, echo, tac. Запуск с deep.zip (параметр --vfs).
-# --- echo: режимы ---
+# --- echo ---
 echo Привет, мир
 echo    много     пробелов
 echo "в кавычках   пробелы сохраняются"
-echo -e "строка 1\nстрока 2\tс табуляцией"
-echo
-# --- ls: без аргументов, с путями, ключи -l и -a ---
+# --- ls: текущий каталог, путь, файл ---
 ls
-ls -l
 ls /home
 ls home/user
-ls -a /home/user
-ls -la home/user
 ls /readme.txt
-ls /readme.txt /etc
-ls /etc /home/guest
-# --- cd: абсолютный и относительный путь, .., -, без аргументов ---
+# --- cd: абсолютный и относительный путь, .., без аргументов ---
 cd /home/user/docs
 ls
 cd archive
 ls
 cd ../..
-cd -
 cd
 cd .
 cd home/user
@@ -33,8 +25,8 @@ tac /readme.txt /home/user/notes.txt
 tac notes.txt
 tac /etc/blob.bin
 # --- ошибки ---
-ls -z
 ls /nowhere
+ls /home /etc
 cd nowhere
 cd notes.txt
 cd /home /etc

@@ -1,12 +1,15 @@
 # VFS из нескольких файлов (several.zip)
-vfs-info
-vfs-tree
-vfs-show readme.txt
-vfs-show docs/guide.txt
-# пустой файл и двоичный файл (выводится в base64)
-vfs-show empty.txt
-vfs-show logo.bin
-# ошибки: каталог, нет аргумента, лишний аргумент
-vfs-show docs
-vfs-show
-vfs-show readme.txt notes.txt
+ls
+ls docs
+tac readme.txt
+tac docs/guide.txt
+# пустой файл ничего не выводит, двоичный файл выводится в base64
+tac empty.txt
+tac logo.bin
+cd docs
+ls
+cd ..
+# ошибки: каталог, нет файла, не каталог
+tac docs
+tac missing.txt
+cd readme.txt
