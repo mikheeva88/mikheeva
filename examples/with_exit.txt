@@ -1,5 +1,5 @@
 # После exit выполнение скрипта и работа эмулятора завершаются
-ls before_exit
-cd somewhere
+echo before_exit
+echo somewhere
 exit
-ls after_exit
+echo after_exit

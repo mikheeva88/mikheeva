@@ -7,6 +7,7 @@ import tempfile
 import unittest
 
 from emulator.script import load_script, run_script
+from emulator.session import Session
 from emulator.vfs import VfsError, load_vfs
 
 ROOT_DIR = os.path.join(os.path.dirname(__file__), os.pardir)
@@ -69,9 +70,9 @@ class TestExampleScripts(GeneratedArchivesTestCase):
 
     def run_example(self, script, archive=None):
         """Выполнить пример скрипта; вернуть строки с ошибками."""
-        vfs = self.load(archive) if archive else None
+        session = Session(vfs=self.load(archive) if archive else None)
         lines = load_script(os.path.join(EXAMPLES_DIR, script))
-        results = list(run_script(lines, vfs))
+        results = list(run_script(lines, session))
         return [line for line, result in results if result.is_error]
 
     def test_minimal_script(self):
@@ -104,10 +105,37 @@ class TestExampleScripts(GeneratedArchivesTestCase):
             "vfs-show",
             "vfs-info now",
             "vfs-tree now",
+            "ls /nowhere",
             "foo bar",
             "exit now",
         ]
         self.assertEqual(errors, expected)
+
+    def test_main_commands_script(self):
+        """main_commands.txt (Этап 4): все режимы и ошибки."""
+        errors = self.run_example("main_commands.txt", "deep.zip")
+        expected = [
+            "ls -z",
+            "ls /nowhere",
+            "cd nowhere",
+            "cd notes.txt",
+            "cd /home /etc",
+            "tac",
+            "tac /home",
+            "tac missing.txt /readme.txt",
+            'echo "незакрытая кавычка',
+            "foo",
+            "exit now",
+        ]
+        self.assertEqual(errors, expected)
+
+    def test_main_commands_without_vfs(self):
+        """Без VFS ls, cd и tac в main_commands.txt дают ошибки."""
+        errors = self.run_example("main_commands.txt")
+        for command in ["ls", "cd", "tac"]:
+            self.assertTrue(
+                any(line.split()[0] == command for line in errors), command
+            )
 
     def test_without_vfs(self):
         """Без VFS ошибкой заканчивается каждая команда vfs-*."""

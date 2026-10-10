@@ -37,6 +37,7 @@ ARCHIVES: Dict[str, List[Entry]] = {
         ("home/", b""),
         ("home/user/", b""),
         ("home/user/notes.txt", "Заметки пользователя\n".encode("utf-8")),
+        ("home/user/.profile", b"export A=1\n"),
         ("home/user/docs/", b""),
         ("home/user/docs/report.txt", "Отчёт\nСтрока 2\n".encode("utf-8")),
         ("home/user/docs/отчёт.txt", "Русское имя файла\n".encode("utf-8")),
@@ -44,6 +45,7 @@ ARCHIVES: Dict[str, List[Entry]] = {
         ("home/guest/", b""),
         ("etc/config.txt", "debug=true\n".encode("utf-8")),
         ("etc/blob.bin", BINARY_DATA),
+        ("etc/lines.txt", b"one\ntwo\n\nfour"),
     ],
     "traversal.zip": [
         ("../evil.txt", b"outside of the root"),

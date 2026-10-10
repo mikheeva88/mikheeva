@@ -1,8 +1,11 @@
-# Все реализованные команды и режимы (Этапы 1-3). Запуск с deep.zip.
-# --- ls и cd: заглушки ---
+# Все реализованные команды и режимы (Этапы 1-4). Запуск с deep.zip.
+# --- echo, ls, cd, tac (подробно: main_commands.txt) ---
+echo Привет
 ls
 ls -l /home
-cd docs photos
+cd /home/user
+ls -a
+tac notes.txt
 cd
 # --- служебные команды VFS ---
 vfs-info
@@ -17,6 +20,7 @@ vfs-show /home
 vfs-show
 vfs-info now
 vfs-tree now
+ls /nowhere
 foo bar
 exit now
 # команда exit без аргументов показана в with_exit.txt

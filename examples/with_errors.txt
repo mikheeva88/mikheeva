@@ -1,10 +1,10 @@
 # Строки с ошибками пропускаются, выполнение продолжается
-ls first
+echo first
 
 foo bar
-cd second
+echo second
 exit now
    
-ls    -a     -l
+echo    third
 unknown_command
-cd third
+echo fourth
