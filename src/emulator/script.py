@@ -1,8 +1,10 @@
 """Загрузка и выполнение стартового скрипта эмулятора."""
 
-from typing import Iterable, Iterator, List, Tuple
+from typing import Iterable, Iterator, List, Optional, Tuple
 
-from emulator.commands import CommandResult, execute
+from emulator.commands import execute
+from emulator.result import CommandResult
+from emulator.vfs import Vfs
 
 COMMENT_PREFIX = "#"
 SCRIPT_ENCODING = "utf-8-sig"
@@ -43,6 +45,7 @@ def is_skipped(line: str) -> bool:
 
 def run_script(
     lines: Iterable[str],
+    vfs: Optional[Vfs] = None,
 ) -> Iterator[Tuple[str, CommandResult]]:
     """Последовательно выполнять строки скрипта.
 
@@ -52,6 +55,7 @@ def run_script(
 
     Args:
         lines: строки скрипта.
+        vfs: загруженная VFS или None, если она не задана.
 
     Yields:
         Пары (строка без лишних пробелов, результат команды).
@@ -60,7 +64,7 @@ def run_script(
         if is_skipped(line):
             continue
         text = line.strip()
-        result = execute(text)
+        result = execute(text, vfs)
         yield text, result
         if result.should_exit:
             return

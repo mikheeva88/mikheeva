@@ -5,6 +5,8 @@ import tempfile
 import unittest
 
 from emulator.script import ScriptError, is_skipped, load_script, run_script
+from emulator.vfs import load_vfs
+from zip_helper import make_zip
 
 EXAMPLES_DIR = os.path.join(os.path.dirname(__file__), os.pardir, "examples")
 
@@ -81,6 +83,20 @@ class TestRunScript(unittest.TestCase):
         results = list(run_script(["foo", "ls", "exit now", "cd a"]))
         self.assertEqual(errors_of(results), ["foo", "exit now"])
         self.assertEqual(len(results), 4)
+
+    def test_vfs_is_passed(self):
+        """Команды скрипта получают загруженную VFS."""
+        vfs = load_vfs(self.make_archive())
+        results = list(run_script(["vfs-info"], vfs))
+        self.assertFalse(results[0][1].is_error)
+
+    def make_archive(self):
+        """Создать маленький архив во временной папке."""
+        folder = tempfile.TemporaryDirectory()
+        self.addCleanup(folder.cleanup)
+        path = os.path.join(folder.name, "a.zip")
+        make_zip(path, [("a.txt", b"1")])
+        return path
 
     def test_exit_stops(self):
         """После exit остальные строки не выполняются."""
