@@ -1,13 +1,15 @@
 #!/bin/sh
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 RUN="$ROOT/run.sh"
-VFS="$ROOT/vfs_data"
+VFSDIR="$ROOT/vfs_data"
+EX="$ROOT/examples"
+python3 "$ROOT/tools/make_vfs.py" "$VFSDIR"
 
 echo "[1/4] Script with erroneous lines (errors are shown, execution continues)"
-"$RUN" --vfs "$VFS" --script "$ROOT/examples/with_errors.txt"
+"$RUN" --vfs "$VFSDIR/minimal.zip" --script "$EX/with_errors.txt"
 echo "[2/4] Script file does not exist (error message, interactive mode works)"
-"$RUN" --vfs "$VFS" --script "$ROOT/examples/no_such_file.txt"
+"$RUN" --vfs "$VFSDIR/minimal.zip" --script "$EX/no_such_file.txt"
 echo "[3/4] Script with exit (window closes after exit)"
-"$RUN" --vfs "$VFS" --script "$ROOT/examples/with_exit.txt"
+"$RUN" --vfs "$VFSDIR/minimal.zip" --script "$EX/with_exit.txt"
 echo "[4/4] Unknown parameter (argparse error, window does not open)"
-"$RUN" --vfs "$VFS" --script "$ROOT/examples/basic.txt" --unknown 1
+"$RUN" --vfs "$VFSDIR/minimal.zip" --script "$EX/basic.txt" --unknown 1

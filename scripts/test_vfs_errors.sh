@@ -1,0 +1,15 @@
+#!/bin/sh
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+RUN="$ROOT/run.sh"
+VFSDIR="$ROOT/vfs_data"
+EX="$ROOT/examples"
+python3 "$ROOT/tools/make_vfs.py" "$VFSDIR"
+
+echo "[1/4] Archive does not exist (error, emulator keeps working without VFS)"
+"$RUN" --vfs "$VFSDIR/no_such.zip" --script "$EX/vfs_minimal.txt"
+echo "[2/4] File is not a ZIP archive"
+"$RUN" --vfs "$VFSDIR/broken.zip" --script "$EX/vfs_minimal.txt"
+echo "[3/4] Archive with unsafe path (../evil.txt)"
+"$RUN" --vfs "$VFSDIR/traversal.zip" --script "$EX/vfs_minimal.txt"
+echo "[4/4] No --vfs at all (every vfs command reports an error)"
+"$RUN" --script "$EX/vfs_minimal.txt"
