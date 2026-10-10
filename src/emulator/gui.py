@@ -4,8 +4,9 @@ import tkinter as tk
 from tkinter import scrolledtext
 from typing import Iterator, Optional, Tuple
 
-from emulator.commands import CommandResult, execute
+from emulator.commands import execute
 from emulator.config import Config, format_debug
+from emulator.result import CommandResult
 from emulator.script import ScriptError, load_script, run_script
 from emulator.system_info import (
     format_prompt,
@@ -13,6 +14,7 @@ from emulator.system_info import (
     get_hostname,
     get_username,
 )
+from emulator.vfs import Vfs, VfsError, load_vfs
 
 WINDOW_SIZE = "800x500"
 BG_COLOR = "#1e1e1e"
@@ -22,7 +24,8 @@ FONT = ("Courier New", 12)
 ERROR_TAG = "error"
 STEP_DELAY_MS = 300
 WELCOME_TEXT = (
-    "Эмулятор командной строки. Доступные команды: ls, cd, exit.\n"
+    "Эмулятор командной строки.\n"
+    "Команды: ls, cd, exit, vfs-info, vfs-tree, vfs-show.\n"
 )
 SCRIPT_DONE_TEXT = "Стартовый скрипт выполнен.\n"
 
@@ -45,12 +48,30 @@ class EmulatorApp:
         self.prompt = format_prompt(username, hostname)
         self.root.title(format_title(username, hostname))
         self.root.geometry(WINDOW_SIZE)
+        self.vfs: Optional[Vfs] = None
         self._steps: Iterator[Tuple[str, CommandResult]] = iter(())
         self._build_widgets()
         self._print(WELCOME_TEXT)
         self._print(format_debug(self.config) + "\n")
+        self._load_vfs()
         if self.config.script_path:
             self.root.after(STEP_DELAY_MS, self._start_script)
+
+    def _load_vfs(self) -> None:
+        """Загрузить VFS из ZIP-архива в память, если задан --vfs."""
+        path = self.config.vfs_path
+        if path is None:
+            return
+        try:
+            self.vfs = load_vfs(path)
+        except VfsError as error:
+            self._print(f"{error}\n", True)
+            return
+        stats = self.vfs.stats()
+        self._print(
+            f"VFS загружена в память: {path} "
+            f"(каталогов: {stats.dirs}, файлов: {stats.files})\n"
+        )
 
     def _build_widgets(self) -> None:
         """Создать область вывода, приглашение и поле ввода."""
@@ -103,7 +124,7 @@ class EmulatorApp:
         """Обработать нажатие Enter: выполнить введённую команду."""
         line = self.entry.get()
         self.entry.delete(0, tk.END)
-        self._show_exchange(line, execute(line))
+        self._show_exchange(line, execute(line, self.vfs))
 
     def _start_script(self) -> None:
         """Прочитать стартовый скрипт и начать его выполнение."""
@@ -114,7 +135,7 @@ class EmulatorApp:
             self._print(f"{error}\n", True)
             return
         self._print(f"Выполнение стартового скрипта: {path}\n")
-        self._steps = run_script(lines)
+        self._steps = run_script(lines, self.vfs)
         self._next_step()
 
     def _next_step(self) -> None:
