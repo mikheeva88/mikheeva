@@ -26,3 +26,6 @@ Thumbs.db
 *.tar.gz
 *.exe
 *.log
+
+# Тестовые VFS-архивы создаются скриптом tools/make_vfs.py
+vfs_data/

@@ -1,0 +1,8 @@
+# VFS из одного файла (minimal.zip)
+vfs-info
+vfs-tree
+# путь можно писать с корня и без него
+vfs-show hello.txt
+vfs-show /hello.txt
+# ошибка: такого файла нет
+vfs-show missing.txt

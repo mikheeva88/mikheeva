@@ -1,0 +1,22 @@
+# Все реализованные команды и режимы (Этапы 1-3). Запуск с deep.zip.
+# --- ls и cd: заглушки ---
+ls
+ls -l /home
+cd docs photos
+cd
+# --- служебные команды VFS ---
+vfs-info
+vfs-tree
+vfs-show /readme.txt
+vfs-show home/user/notes.txt
+vfs-show home/user/docs/archive/old.txt
+vfs-show etc/blob.bin
+# --- обработка ошибок ---
+vfs-show missing.txt
+vfs-show /home
+vfs-show
+vfs-info now
+vfs-tree now
+foo bar
+exit now
+# команда exit без аргументов показана в with_exit.txt
