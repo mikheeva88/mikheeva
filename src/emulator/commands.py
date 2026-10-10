@@ -1,10 +1,13 @@
-"""Команды эмулятора: ls, cd (заглушки), exit и служебные команды VFS."""
+"""Команды эмулятора и их выполнение."""
 
 from typing import Callable, Dict, List, Optional
 
+from emulator.errors import CommandError, reject_args
+from emulator.fs_commands import cmd_cd, cmd_ls
 from emulator.result import CommandResult
-from emulator.shell_parser import parse_line
-from emulator.vfs import Vfs
+from emulator.session import Session
+from emulator.shell_parser import ParseError, parse_line
+from emulator.text_commands import cmd_echo, cmd_tac
 from emulator.vfs_commands import (
     INFO_NAME,
     SHOW_NAME,
@@ -14,50 +17,25 @@ from emulator.vfs_commands import (
     cmd_vfs_tree,
 )
 
-NO_ARGS_TEXT = "(нет)"
 EXIT_NAME = "exit"
 
-Handler = Callable[[List[str], Optional[Vfs]], CommandResult]
+Handler = Callable[[List[str], Session], CommandResult]
 
 
-def format_stub(name: str, args: List[str]) -> str:
-    """Сформировать вывод команды-заглушки: имя и аргументы.
-
-    Args:
-        name: имя команды.
-        args: список аргументов команды.
-
-    Returns:
-        Многострочный текст с именем команды и её аргументами.
-    """
-    args_text = " ".join(args) if args else NO_ARGS_TEXT
-    return f"Команда: {name}\nАргументы ({len(args)}): {args_text}"
-
-
-def cmd_ls(args: List[str], _vfs: Optional[Vfs]) -> CommandResult:
-    """Заглушка команды ls: выводит своё имя и аргументы."""
-    return CommandResult(format_stub("ls", args))
-
-
-def cmd_cd(args: List[str], _vfs: Optional[Vfs]) -> CommandResult:
-    """Заглушка команды cd: выводит своё имя и аргументы."""
-    return CommandResult(format_stub("cd", args))
-
-
-def cmd_exit(args: List[str], _vfs: Optional[Vfs]) -> CommandResult:
+def cmd_exit(args: List[str], _session: Session) -> CommandResult:
     """Команда exit: завершает работу эмулятора.
 
     Если переданы аргументы, возвращает ошибку и не завершает работу.
     """
-    if args:
-        message = f"{EXIT_NAME}: слишком много аргументов"
-        return CommandResult(message, is_error=True)
+    reject_args(args)
     return CommandResult("", should_exit=True)
 
 
 COMMANDS: Dict[str, Handler] = {
     "ls": cmd_ls,
     "cd": cmd_cd,
+    "echo": cmd_echo,
+    "tac": cmd_tac,
     EXIT_NAME: cmd_exit,
     INFO_NAME: cmd_vfs_info,
     TREE_NAME: cmd_vfs_tree,
@@ -65,22 +43,34 @@ COMMANDS: Dict[str, Handler] = {
 }
 
 
-def execute(line: str, vfs: Optional[Vfs] = None) -> CommandResult:
+def _error(text: str) -> CommandResult:
+    """Сформировать результат-ошибку с заданным текстом."""
+    return CommandResult(text, is_error=True)
+
+
+def execute(line: str, session: Optional[Session] = None) -> CommandResult:
     """Разобрать строку ввода и выполнить соответствующую команду.
 
     Args:
         line: строка, введённая пользователем.
-        vfs: загруженная VFS или None, если она не задана.
+        session: состояние сеанса (VFS и текущий каталог); если None,
+            используется пустое состояние без VFS.
 
     Returns:
         CommandResult. Для пустой строки вывод пустой; для неизвестной
-        команды возвращается сообщение об ошибке.
+        команды и ошибок разбора возвращается сообщение об ошибке.
     """
-    parsed = parse_line(line)
+    session = Session() if session is None else session
+    try:
+        parsed = parse_line(line)
+    except ParseError as error:
+        return _error(f"синтаксическая ошибка: {error}")
     if parsed is None:
         return CommandResult("")
     handler = COMMANDS.get(parsed.command)
     if handler is None:
-        message = f"{parsed.command}: команда не найдена"
-        return CommandResult(message, is_error=True)
-    return handler(parsed.args, vfs)
+        return _error(f"{parsed.command}: команда не найдена")
+    try:
+        return handler(parsed.args, session)
+    except CommandError as error:
+        return _error(f"{parsed.command}: {error}")

@@ -4,8 +4,7 @@ import base64
 import unittest
 
 from emulator.commands import execute
-from emulator.vfs import load_vfs
-from zip_helper import TempDirTestCase
+from zip_helper import SessionTestCase
 
 BINARY = bytes([0x89, 0x50, 0xFF, 0x00, 0x01])
 ENTRIES = [
@@ -29,17 +28,10 @@ TREE = "\n".join([
 ])
 
 
-class VfsCommandsTestCase(TempDirTestCase):
-    """Базовый класс: загруженная VFS и вызов команд."""
+class VfsCommandsTestCase(SessionTestCase):
+    """Базовый класс: сеанс с тестовой VFS."""
 
-    def setUp(self):
-        """Загрузить тестовую VFS."""
-        super().setUp()
-        self.vfs = load_vfs(self.archive(ENTRIES))
-
-    def run_line(self, line):
-        """Выполнить команду с загруженной VFS."""
-        return execute(line, self.vfs)
+    ENTRIES = ENTRIES
 
 
 class TestVfsInfo(VfsCommandsTestCase):
@@ -106,6 +98,13 @@ class TestVfsShow(VfsCommandsTestCase):
         result = self.run_line("vfs-show nope.txt")
         self.assertTrue(result.is_error)
         self.assertIn("nope.txt", result.output)
+
+    def test_relative_to_cwd(self):
+        """Путь считается от текущего каталога."""
+        self.run_line("cd docs")
+        self.assertEqual(self.run_line("vfs-show guide.txt").output, "guide")
+        self.assertEqual(self.run_line("vfs-show ../empty.txt").output,
+                         "(файл пуст)")
 
     def test_wrong_arg_count(self):
         """Без аргументов и с двумя — ошибка использования."""

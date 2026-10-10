@@ -1,32 +1,9 @@
-"""Тесты команд эмулятора."""
+"""Тесты выполнения команд: exit, ошибки ввода, диспетчер."""
 
 import unittest
 
 from emulator.commands import execute
-
-
-class TestStubs(unittest.TestCase):
-    """Проверка команд-заглушек ls и cd."""
-
-    def test_ls_without_args(self):
-        """ls без аргументов выводит имя и «(нет)»."""
-        result = execute("ls")
-        self.assertIn("ls", result.output)
-        self.assertIn("(нет)", result.output)
-        self.assertFalse(result.is_error)
-        self.assertFalse(result.should_exit)
-
-    def test_ls_with_args(self):
-        """ls выводит все переданные аргументы."""
-        result = execute("ls -l /tmp")
-        self.assertIn("-l /tmp", result.output)
-
-    def test_cd_with_args(self):
-        """cd выводит своё имя и аргументы."""
-        result = execute("cd docs")
-        self.assertIn("cd", result.output)
-        self.assertIn("docs", result.output)
-        self.assertFalse(result.is_error)
+from emulator.session import Session
 
 
 class TestExit(unittest.TestCase):
@@ -43,6 +20,7 @@ class TestExit(unittest.TestCase):
         result = execute("exit now")
         self.assertTrue(result.is_error)
         self.assertFalse(result.should_exit)
+        self.assertEqual(result.output, "exit: слишком много аргументов")
 
 
 class TestErrors(unittest.TestCase):
@@ -52,7 +30,7 @@ class TestErrors(unittest.TestCase):
         """Неизвестная команда даёт сообщение об ошибке."""
         result = execute("foo bar")
         self.assertTrue(result.is_error)
-        self.assertIn("foo", result.output)
+        self.assertEqual(result.output, "foo: команда не найдена")
 
     def test_empty_input(self):
         """Пустой ввод ничего не выводит и не считается ошибкой."""
@@ -60,6 +38,27 @@ class TestErrors(unittest.TestCase):
         self.assertEqual(result.output, "")
         self.assertFalse(result.is_error)
         self.assertFalse(result.should_exit)
+
+    def test_syntax_error(self):
+        """Незакрытая кавычка даёт синтаксическую ошибку."""
+        result = execute('echo "abc')
+        self.assertTrue(result.is_error)
+        self.assertIn("синтаксическая ошибка", result.output)
+
+
+class TestSession(unittest.TestCase):
+    """Проверка работы с сеансом."""
+
+    def test_default_session(self):
+        """Без сеанса команды работают, но VFS нет."""
+        self.assertEqual(execute("echo hi").output, "hi")
+        self.assertTrue(execute("ls").is_error)
+
+    def test_session_is_kept(self):
+        """Один и тот же сеанс сохраняется между командами."""
+        session = Session()
+        execute("echo hi", session)
+        self.assertEqual(session.cwd, "/")
 
 
 if __name__ == "__main__":
