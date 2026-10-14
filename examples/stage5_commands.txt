@@ -1,0 +1,35 @@
+# Этап 5: rmdir и chown (ls -l показывает владельцев). Запуск с deep.zip.
+# Все изменения только в памяти, ZIP-архив не меняется.
+# --- ls -l: владельцы по умолчанию ---
+ls -l /home/user
+# --- chown: только владелец, владелец и группа, несколько путей ---
+chown alice /home/user/notes.txt
+chown bob:staff /home/user/docs
+chown carol /etc/config.txt /etc/lines.txt
+ls -l /home/user
+ls -l /etc
+# --- rmdir: один каталог и несколько ---
+ls /tmp
+rmdir /tmp/a /tmp/b
+ls /tmp
+rmdir /tmp
+ls /
+# --- ошибки ls ---
+ls -z
+ls -l /nowhere
+# --- ошибки chown ---
+chown
+chown alice
+chown alice /nowhere
+chown : /readme.txt
+# --- ошибки rmdir ---
+rmdir
+rmdir /nowhere
+rmdir /readme.txt
+rmdir /home
+rmdir /
+cd /home/guest
+rmdir .
+cd /
+rmdir home/guest
+ls /home
