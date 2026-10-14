@@ -1,143 +1,107 @@
-"""Эмулятор командной строки UNIX-подобной ОС (вариант 18)."""
-
 import argparse
 import base64
+import collections
 import getpass
 import shlex
 import socket
 import tkinter as tk
 import zipfile
-import zlib
 from tkinter import scrolledtext
-from typing import (
-    Callable, Dict, Iterable, List, NamedTuple, Optional, Tuple, Union,
-)
 
 ROOT = "/"
-UNKNOWN = "unknown"
-NOT_SET = "(не задан)"
-NOT_FOUND = "нет такого файла или каталога"
+DEFAULT_OWNER = ("root", "root")
 TOO_MANY = "слишком много аргументов"
-BINARY_TEXT = "(двоичный файл, base64)"
-NUL = "\x00"
-NEWLINE = b"\n"
-COMMENT = "#"
-WINDOW_SIZE = "800x500"
+NOT_FOUND = "нет такого файла или каталога"
+NOT_SET = "(не задан)"
+STEP_DELAY_MS = 300
 BG_COLOR = "#1e1e1e"
 FG_COLOR = "#d4d4d4"
 ERROR_COLOR = "#f48771"
 FONT = ("Courier New", 12)
-ERROR_TAG = "error"
-STEP_DELAY_MS = 300
-WELCOME_TEXT = "Эмулятор командной строки. Команды: ls, cd, echo, tac, exit.\n"
-LOAD_ERRORS = (
-    OSError,
-    zipfile.BadZipFile,
-    RuntimeError,
-    NotImplementedError,
-    EOFError,
-    zlib.error,
+WELCOME_TEXT = (
+    "Эмулятор командной строки.\n"
+    "Команды: ls, cd, echo, tac, rmdir, chown, exit.\n"
+)
+Result = collections.namedtuple(
+    "Result", "output is_error should_exit", defaults=(False, False)
 )
 
 
 class VfsError(Exception):
-    """Ошибка загрузки VFS."""
-
-
-class ScriptError(Exception):
-    """Ошибка чтения стартового скрипта."""
+    pass
 
 
 class CommandError(Exception):
-    """Ошибка команды (текст показывается пользователю)."""
+    pass
 
 
-class Result(NamedTuple):
-    """Результат команды: текст, признак ошибки, признак выхода."""
-
-    output: str
-    is_error: bool = False
-    should_exit: bool = False
-
-
-def split_path(path: str) -> List[str]:
-    """Разбить путь по «/», отбросив пустые части и «.»."""
+def split_path(path):
     return [part for part in path.split("/") if part and part != "."]
 
 
-def add_entry(root: dict, name: str, data: bytes, is_dir: bool) -> None:
-    """Добавить запись ZIP-архива в дерево VFS (словари и байты)."""
+def add_entry(root, name, data, is_dir):
     parts = split_path(name)
     if ".." in parts:
         raise VfsError(f"недопустимый путь в архиве: '{name}'")
-    if not parts:
-        return
     folder = root
     for part in parts if is_dir else parts[:-1]:
         folder = folder.setdefault(part, {})
         if not isinstance(folder, dict):
             raise VfsError(f"конфликт имён в записи '{name}'")
-    if not is_dir and parts[-1] in folder:
-        raise VfsError(f"повторяющаяся запись '{name}'")
-    if not is_dir:
+    if parts and not is_dir:
+        if parts[-1] in folder:
+            raise VfsError(f"повторяющаяся запись '{name}'")
         folder[parts[-1]] = data
 
 
-def load_vfs(path: str) -> dict:
-    """Загрузить ZIP-архив в память: каталог это dict, файл это bytes."""
-    root: dict = {}
+def load_vfs(path):
+    root = {}
     try:
         with zipfile.ZipFile(path) as archive:
             for info in archive.infolist():
                 data = b"" if info.is_dir() else archive.read(info)
                 add_entry(root, info.filename, data, info.is_dir())
-    except LOAD_ERRORS as error:
-        raise VfsError(f"не удалось загрузить VFS '{path}': {error}") from error
+    except (OSError, zipfile.BadZipFile, RuntimeError) as error:
+        message = f"не удалось загрузить VFS '{path}': {error}"
+        raise VfsError(message) from error
     return root
 
 
-def reverse_lines(data: bytes) -> bytes:
-    """Записать строки данных в обратном порядке."""
-    lines = data.split(NEWLINE)
+def reverse_lines(data):
+    lines = data.split(b"\n")
     if lines[-1] == b"":
         lines.pop()
     lines.reverse()
-    return NEWLINE.join(lines)
+    return b"\n".join(lines)
 
 
-def is_text(data: bytes) -> bool:
-    """Проверить, что данные это текст UTF-8 без нулевых байтов."""
+def format_content(data):
     try:
-        return NUL not in data.decode("utf-8")
+        text = data.decode("utf-8")
     except UnicodeDecodeError:
-        return False
-
-
-def format_content(data: bytes) -> str:
-    """Текст выводится как есть, двоичные данные в base64."""
-    if is_text(data):
-        return data.decode("utf-8").replace("\r\n", "\n").rstrip("\n")
-    encoded = base64.encodebytes(data).decode("ascii").rstrip("\n")
-    return f"{BINARY_TEXT}\n{encoded}"
+        text = "\x00"
+    if "\x00" in text:
+        encoded = base64.encodebytes(data).decode("ascii").rstrip("\n")
+        return f"(двоичный файл, base64)\n{encoded}"
+    return text.replace("\r\n", "\n").rstrip("\n")
 
 
 class Shell:
-    """Оболочка: VFS в памяти, текущий каталог и команды."""
-
-    def __init__(self, vfs: dict) -> None:
-        """Создать оболочку с заданной VFS, текущий каталог корень."""
+    def __init__(self, vfs):
         self.vfs = vfs
         self.cwd = ROOT
-        self.commands: Dict[str, Callable[[List[str]], Result]] = {
+        self.owners = {}
+        self.commands = {
             "ls": self.cmd_ls,
             "cd": self.cmd_cd,
             "echo": self.cmd_echo,
             "tac": self.cmd_tac,
+            "rmdir": self.cmd_rmdir,
+            "chown": self.cmd_chown,
             "exit": self.cmd_exit,
         }
 
-    def resolve(self, path: str) -> List[str]:
-        """Превратить путь в список частей от корня (учёт «..»)."""
+    def resolve(self, path):
         parts = [] if path.startswith(ROOT) else split_path(self.cwd)
         for part in split_path(path):
             if part != "..":
@@ -146,8 +110,10 @@ class Shell:
                 parts.pop()
         return parts
 
-    def lookup(self, path: str) -> Union[dict, bytes]:
-        """Найти узел VFS по пути или вызвать CommandError."""
+    def full_path(self, parts):
+        return ROOT + "/".join(parts)
+
+    def lookup(self, path):
         node = self.vfs
         for part in self.resolve(path):
             if not isinstance(node, dict) or part not in node:
@@ -155,57 +121,105 @@ class Shell:
             node = node[part]
         return node
 
-    def read_file(self, path: str) -> bytes:
-        """Вернуть содержимое файла или вызвать CommandError."""
+    def read_file(self, path):
         node = self.lookup(path)
         if isinstance(node, dict):
             raise CommandError(f"{path}: это каталог")
         return node
 
-    def cmd_ls(self, args: List[str]) -> Result:
-        """ls [ПУТЬ]: имена в каталоге (каталоги со «/») или имя файла."""
-        if args[1:]:
-            raise CommandError(TOO_MANY)
-        path = args[0] if args else "."
-        node = self.lookup(path)
-        if not isinstance(node, dict):
-            return Result(path)
-        names = [
-            name + "/" if isinstance(child, dict) else name
-            for name, child in sorted(node.items())
-        ]
-        return Result("\n".join(names))
+    def ls_line(self, label, parts, node, long_format):
+        if not long_format:
+            return label
+        owner, group = self.owners.get(self.full_path(parts), DEFAULT_OWNER)
+        kind, size = ("d", 0) if isinstance(node, dict) else ("-", len(node))
+        return f"{kind} {owner} {group} {size:>6} {label}"
 
-    def cmd_cd(self, args: List[str]) -> Result:
-        """cd [ПУТЬ]: сменить каталог, без аргумента перейти в корень."""
+    def cmd_ls(self, args):
+        long_format = False
+        paths = []
+        for arg in args:
+            if arg == "-l":
+                long_format = True
+            elif arg.startswith("-"):
+                raise CommandError(f"неверный ключ: {arg}")
+            else:
+                paths.append(arg)
+        if paths[1:]:
+            raise CommandError(TOO_MANY)
+        path = paths[0] if paths else "."
+        node = self.lookup(path)
+        parts = self.resolve(path)
+        if not isinstance(node, dict):
+            return Result(self.ls_line(path, parts, node, long_format))
+        lines = []
+        for name, child in sorted(node.items()):
+            label = name + "/" if isinstance(child, dict) else name
+            line = self.ls_line(label, parts + [name], child, long_format)
+            lines.append(line)
+        return Result("\n".join(lines))
+
+    def cmd_cd(self, args):
         if args[1:]:
             raise CommandError(TOO_MANY)
         path = args[0] if args else ROOT
         if not isinstance(self.lookup(path), dict):
             raise CommandError(f"{path}: не каталог")
-        self.cwd = ROOT + "/".join(self.resolve(path))
+        self.cwd = self.full_path(self.resolve(path))
         return Result("")
 
-    def cmd_echo(self, args: List[str]) -> Result:
-        """echo [СЛОВО...]: вывести аргументы через пробел."""
+    def cmd_echo(self, args):
         return Result(" ".join(args))
 
-    def cmd_tac(self, args: List[str]) -> Result:
-        """tac ФАЙЛ...: вывести строки каждого файла с конца."""
+    def cmd_tac(self, args):
         if not args:
             raise CommandError("использование: tac ФАЙЛ...")
         contents = [self.read_file(path) for path in args]
         parts = [format_content(reverse_lines(data)) for data in contents]
         return Result("\n".join(part for part in parts if part))
 
-    def cmd_exit(self, args: List[str]) -> Result:
-        """exit: завершить работу эмулятора."""
+    def remove_dir(self, path):
+        node = self.lookup(path)
+        parts = self.resolve(path)
+        if not parts:
+            raise CommandError(f"{path}: нельзя удалить корень")
+        if not isinstance(node, dict):
+            raise CommandError(f"{path}: не каталог")
+        if node:
+            raise CommandError(f"{path}: каталог не пуст")
+        if self.full_path(parts) == self.cwd:
+            raise CommandError(f"{path}: нельзя удалить текущий каталог")
+        parent = self.lookup(self.full_path(parts[:-1]))
+        del parent[parts[-1]]
+        self.owners.pop(self.full_path(parts), None)
+
+    def cmd_rmdir(self, args):
+        if not args:
+            raise CommandError("использование: rmdir КАТАЛОГ...")
+        for path in args:
+            self.remove_dir(path)
+        return Result("")
+
+    def cmd_chown(self, args):
+        if not args[1:]:
+            message = "использование: chown ВЛАДЕЛЕЦ[:ГРУППА] ПУТЬ..."
+            raise CommandError(message)
+        owner, _, group = args[0].partition(":")
+        if not owner:
+            raise CommandError(f"неверный владелец: '{args[0]}'")
+        for path in args[1:]:
+            self.lookup(path)
+        for path in args[1:]:
+            key = self.full_path(self.resolve(path))
+            old_group = self.owners.get(key, DEFAULT_OWNER)[1]
+            self.owners[key] = (owner, group or old_group)
+        return Result("")
+
+    def cmd_exit(self, args):
         if args:
             raise CommandError(TOO_MANY)
         return Result("", should_exit=True)
 
-    def run(self, line: str) -> Result:
-        """Разобрать строку и выполнить команду."""
+    def run(self, line):
         try:
             words = shlex.split(line)
         except ValueError:
@@ -221,28 +235,14 @@ class Shell:
             return Result(f"{words[0]}: {error}", True)
 
 
-def read_script(path: str) -> List[str]:
-    """Прочитать стартовый скрипт (UTF-8) и вернуть его строки."""
-    try:
-        with open(path, encoding="utf-8-sig") as script_file:
-            return script_file.read().splitlines()
-    except (OSError, UnicodeDecodeError) as error:
-        raise ScriptError(f"не удалось прочитать скрипт '{path}': {error}")
+def read_script(path):
+    with open(path, encoding="utf-8-sig") as script_file:
+        lines = [line.strip() for line in script_file]
+    return [line for line in lines if line and not line.startswith("#")]
 
 
-def script_commands(lines: Iterable[str]) -> List[str]:
-    """Оставить в скрипте команды: без пустых строк и комментариев."""
-    texts = [line.strip() for line in lines]
-    return [text for text in texts if text and not text.startswith(COMMENT)]
-
-
-def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    """Разобрать параметры командной строки: --vfs и --script."""
-    parser = argparse.ArgumentParser(
-        prog="emulator",
-        description="Эмулятор командной строки UNIX-подобной ОС (GUI).",
-        allow_abbrev=False,
-    )
+def parse_args(argv=None):
+    parser = argparse.ArgumentParser(prog="emulator", allow_abbrev=False)
     parser.add_argument("--vfs", metavar="PATH", help="путь к ZIP-архиву VFS")
     parser.add_argument(
         "--script", metavar="PATH", help="путь к стартовому скрипту"
@@ -250,8 +250,7 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
-def format_debug(args: argparse.Namespace) -> str:
-    """Отладочный вывод всех параметров запуска."""
+def format_debug(args):
     vfs = NOT_SET if args.vfs is None else args.vfs
     script = NOT_SET if args.script is None else args.script
     return (
@@ -261,55 +260,34 @@ def format_debug(args: argparse.Namespace) -> str:
     )
 
 
-def get_user_host() -> Tuple[str, str]:
-    """Имя пользователя и имя компьютера из реальной ОС."""
-    try:
-        user = getpass.getuser()
-    except (KeyError, OSError):
-        user = UNKNOWN
-    return user, socket.gethostname() or UNKNOWN
-
-
-def format_title(user: str, host: str) -> str:
-    """Заголовок окна: Эмулятор - [user@host]."""
-    return f"Эмулятор - [{user}@{host}]"
-
-
-def format_prompt(user: str, host: str, cwd: str) -> str:
-    """Приглашение: user@host:/текущий/каталог$."""
-    return f"{user}@{host}:{cwd}$"
-
-
 class App:
-    """Окно эмулятора: область вывода, приглашение и строка ввода."""
-
-    def __init__(self, root: tk.Tk, args: argparse.Namespace) -> None:
-        """Создать окно, показать параметры, загрузить VFS и скрипт."""
+    def __init__(self, root, args):
         self.root = root
         self.args = args
-        self.user, self.host = get_user_host()
         self.shell = Shell({})
         self.steps = iter(())
-        root.title(format_title(self.user, self.host))
-        root.geometry(WINDOW_SIZE)
+        try:
+            self.user = getpass.getuser()
+        except (KeyError, OSError):
+            self.user = "unknown"
+        self.host = socket.gethostname()
+        root.title(f"Эмулятор - [{self.user}@{self.host}]")
+        root.geometry("800x500")
         self.build_widgets()
-        self.print(WELCOME_TEXT)
-        self.print(format_debug(args) + "\n")
+        self.show(WELCOME_TEXT + format_debug(args) + "\n")
         self.load_vfs()
         if args.script is not None:
             root.after(STEP_DELAY_MS, self.start_script)
 
-    def prompt(self) -> str:
-        """Приглашение с текущим каталогом."""
-        return format_prompt(self.user, self.host, self.shell.cwd)
+    def prompt(self):
+        return f"{self.user}@{self.host}:{self.shell.cwd}$"
 
-    def build_widgets(self) -> None:
-        """Создать область вывода, приглашение и поле ввода."""
+    def build_widgets(self):
         self.output = scrolledtext.ScrolledText(
             self.root, bg=BG_COLOR, fg=FG_COLOR, font=FONT,
             state=tk.DISABLED, wrap=tk.WORD,
         )
-        self.output.tag_config(ERROR_TAG, foreground=ERROR_COLOR)
+        self.output.tag_config("error", foreground=ERROR_COLOR)
         self.output.pack(fill=tk.BOTH, expand=True)
         bottom = tk.Frame(self.root, bg=BG_COLOR)
         bottom.pack(fill=tk.X)
@@ -325,65 +303,58 @@ class App:
         self.entry.bind("<Return>", self.on_enter)
         self.entry.focus_set()
 
-    def print(self, text: str, is_error: bool = False) -> None:
-        """Добавить текст в конец области вывода."""
-        tags = (ERROR_TAG,) if is_error else ()
+    def show(self, text, is_error=False):
+        tags = ("error",) if is_error else ()
         self.output.config(state=tk.NORMAL)
         self.output.insert(tk.END, text, tags)
         self.output.see(tk.END)
         self.output.config(state=tk.DISABLED)
 
-    def load_vfs(self) -> None:
-        """Загрузить VFS из ZIP-архива в память, если задан --vfs."""
+    def load_vfs(self):
         if self.args.vfs is None:
             return
         try:
             self.shell.vfs = load_vfs(self.args.vfs)
         except VfsError as error:
-            self.print(f"{error}\n", True)
+            self.show(f"{error}\n", True)
             return
-        self.print(f"VFS загружена в память: {self.args.vfs}\n")
+        self.show(f"VFS загружена в память: {self.args.vfs}\n")
 
-    def run_line(self, line: str) -> bool:
-        """Выполнить строку, показать ввод и вывод; True при exit."""
+    def run_line(self, line):
         prompt = self.prompt()
         result = self.shell.run(line)
-        self.print(f"{prompt} {line}\n")
+        self.show(f"{prompt} {line}\n")
         if result.output:
-            self.print(result.output + "\n", result.is_error)
+            self.show(result.output + "\n", result.is_error)
         self.label.config(text=self.prompt())
         if result.should_exit:
             self.root.destroy()
         return result.should_exit
 
-    def on_enter(self, _event: tk.Event) -> None:
-        """Нажат Enter: выполнить введённую команду."""
+    def on_enter(self, _event):
         line = self.entry.get()
         self.entry.delete(0, tk.END)
         self.run_line(line)
 
-    def start_script(self) -> None:
-        """Прочитать стартовый скрипт и начать его выполнение."""
+    def start_script(self):
         try:
-            lines = read_script(self.args.script)
-        except ScriptError as error:
-            self.print(f"{error}\n", True)
+            self.steps = iter(read_script(self.args.script))
+        except (OSError, UnicodeDecodeError) as error:
+            message = f"не удалось прочитать скрипт '{self.args.script}'"
+            self.show(f"{message}: {error}\n", True)
             return
-        self.print(f"Выполнение стартового скрипта: {self.args.script}\n")
-        self.steps = iter(script_commands(lines))
+        self.show(f"Выполнение стартового скрипта: {self.args.script}\n")
         self.next_step()
 
-    def next_step(self) -> None:
-        """Выполнить очередную строку скрипта, запланировать следующую."""
+    def next_step(self):
         line = next(self.steps, None)
         if line is None:
-            self.print("Стартовый скрипт выполнен.\n")
+            self.show("Стартовый скрипт выполнен.\n")
         elif not self.run_line(line):
             self.root.after(STEP_DELAY_MS, self.next_step)
 
 
-def main(argv: Optional[List[str]] = None) -> None:
-    """Разобрать параметры и запустить окно эмулятора."""
+def main(argv=None):
     args = parse_args(argv)
     root = tk.Tk()
     App(root, args)
