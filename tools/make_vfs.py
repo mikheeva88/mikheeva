@@ -8,7 +8,7 @@ ARCHIVES = {
         ("hello.txt", "Привет из VFS!\n"),
     ],
     "several.zip": [
-        ("readme.txt", "Первая строка\nВторая строка\n"),
+        ("readme.txt", "Первая\nВторая\n"),
         ("notes.txt", "Заметки\n"),
         ("empty.txt", ""),
         ("logo.bin", BINARY),
@@ -46,8 +46,8 @@ def main():
             for entry, data in entries:
                 archive.writestr(entry, data)
     broken = os.path.join(folder, "broken.zip")
-    with open(broken, "w", encoding="utf-8") as broken_file:
-        broken_file.write("Это обычный текст, а не ZIP-архив\n")
+    with open(broken, "w", encoding="utf-8") as bad_file:
+        bad_file.write("Это не ZIP-архив\n")
     print(f"архивы созданы в папке {folder}")
 
 

@@ -1,12 +1,12 @@
 import argparse
 import base64
-import collections
 import getpass
 import shlex
 import socket
 import tkinter as tk
 import zipfile
 from tkinter import scrolledtext
+from typing import NamedTuple
 
 ROOT = "/"
 DEFAULT_OWNER = ("root", "root")
@@ -22,9 +22,12 @@ WELCOME_TEXT = (
     "Эмулятор командной строки.\n"
     "Команды: ls, cd, echo, tac, rmdir, chown, exit.\n"
 )
-Result = collections.namedtuple(
-    "Result", "output is_error should_exit", defaults=(False, False)
-)
+
+
+class Result(NamedTuple):
+    output: str
+    is_error: bool = False
+    should_exit: bool = False
 
 
 class VfsError(Exception):
@@ -42,12 +45,16 @@ def split_path(path):
 def add_entry(root, name, data, is_dir):
     parts = split_path(name)
     if ".." in parts:
-        raise VfsError(f"недопустимый путь в архиве: '{name}'")
+        raise VfsError(
+            f"недопустимый путь в архиве: '{name}'"
+        )
     folder = root
     for part in parts if is_dir else parts[:-1]:
         folder = folder.setdefault(part, {})
         if not isinstance(folder, dict):
-            raise VfsError(f"конфликт имён в записи '{name}'")
+            raise VfsError(
+                f"конфликт имён в записи '{name}'"
+            )
     if parts and not is_dir:
         if parts[-1] in folder:
             raise VfsError(f"повторяющаяся запись '{name}'")
@@ -62,7 +69,7 @@ def load_vfs(path):
                 data = b"" if info.is_dir() else archive.read(info)
                 add_entry(root, info.filename, data, info.is_dir())
     except (OSError, zipfile.BadZipFile, RuntimeError) as error:
-        message = f"не удалось загрузить VFS '{path}': {error}"
+        message = f"ошибка загрузки VFS '{path}': {error}"
         raise VfsError(message) from error
     return root
 
@@ -135,7 +142,6 @@ class Shell:
         return f"{kind} {owner} {group} {size:>6} {label}"
 
     def cmd_ls(self, args):
-        debug_info = f"[debug] ls: {args}"
         long_format = False
         paths = []
         for arg in args:
@@ -151,8 +157,8 @@ class Shell:
         node = self.lookup(path)
         parts = self.resolve(path)
         if not isinstance(node, dict):
-            return Result(f"{debug_info}\n{self.ls_line(path, parts, node, long_format)}")
-        lines = [debug_info]
+            return Result(self.ls_line(path, parts, node, long_format))
+        lines = []
         for name, child in sorted(node.items()):
             label = name + "/" if isinstance(child, dict) else name
             line = self.ls_line(label, parts + [name], child, long_format)
@@ -160,14 +166,13 @@ class Shell:
         return Result("\n".join(lines))
 
     def cmd_cd(self, args):
-        debug_info = f"[debug] cd: {args}"
         if args[1:]:
             raise CommandError(TOO_MANY)
         path = args[0] if args else ROOT
         if not isinstance(self.lookup(path), dict):
             raise CommandError(f"{path}: не каталог")
         self.cwd = self.full_path(self.resolve(path))
-        return Result(debug_info)
+        return Result("")
 
     def cmd_echo(self, args):
         return Result(" ".join(args))
@@ -183,31 +188,39 @@ class Shell:
         node = self.lookup(path)
         parts = self.resolve(path)
         if not parts:
-            raise CommandError(f"{path}: нельзя удалить корень")
+            raise CommandError(
+                f"{path}: нельзя удалить корень"
+            )
         if not isinstance(node, dict):
             raise CommandError(f"{path}: не каталог")
         if node:
             raise CommandError(f"{path}: каталог не пуст")
         if self.full_path(parts) == self.cwd:
-            raise CommandError(f"{path}: нельзя удалить текущий каталог")
+            raise CommandError(f"{path}: это текущий каталог")
         parent = self.lookup(self.full_path(parts[:-1]))
         del parent[parts[-1]]
         self.owners.pop(self.full_path(parts), None)
 
     def cmd_rmdir(self, args):
         if not args:
-            raise CommandError("использование: rmdir КАТАЛОГ...")
+            raise CommandError(
+                "использование: rmdir КАТАЛОГ..."
+            )
         for path in args:
             self.remove_dir(path)
         return Result("")
 
     def cmd_chown(self, args):
         if not args[1:]:
-            message = "использование: chown ВЛАДЕЛЕЦ[:ГРУППА] ПУТЬ..."
-            raise CommandError(message)
+            raise CommandError(
+                "использование: "
+                "chown ВЛАДЕЛЕЦ[:ГРУППА] ПУТЬ..."
+            )
         owner, _, group = args[0].partition(":")
         if not owner:
-            raise CommandError(f"неверный владелец: '{args[0]}'")
+            raise CommandError(
+                f"неверный владелец: '{args[0]}'"
+            )
         for path in args[1:]:
             self.lookup(path)
         for path in args[1:]:
@@ -225,12 +238,14 @@ class Shell:
         try:
             words = shlex.split(line)
         except ValueError:
-            return Result("синтаксическая ошибка: незакрытая кавычка", True)
+            message = "синтаксическая ошибка: "
+            return Result(message + "незакрытая кавычка", True)
         if not words:
             return Result("")
         handler = self.commands.get(words[0])
         if handler is None:
-            return Result(f"{words[0]}: команда не найдена", True)
+            message = f"{words[0]}: команда не найдена"
+            return Result(message, True)
         try:
             return handler(words[1:])
         except CommandError as error:
@@ -245,10 +260,8 @@ def read_script(path):
 
 def parse_args(argv=None):
     parser = argparse.ArgumentParser(prog="emulator", allow_abbrev=False)
-    parser.add_argument("--vfs", metavar="PATH", help="путь к ZIP-архиву VFS")
-    parser.add_argument(
-        "--script", metavar="PATH", help="путь к стартовому скрипту"
-    )
+    parser.add_argument("--vfs", metavar="PATH", help="ZIP-архив VFS")
+    parser.add_argument("--script", metavar="PATH", help="скрипт")
     return parser.parse_args(argv)
 
 
@@ -339,13 +352,13 @@ class App:
         self.run_line(line)
 
     def start_script(self):
+        path = self.args.script
         try:
-            self.steps = iter(read_script(self.args.script))
+            self.steps = iter(read_script(path))
         except (OSError, UnicodeDecodeError) as error:
-            message = f"не удалось прочитать скрипт '{self.args.script}'"
-            self.show(f"{message}: {error}\n", True)
+            self.show(f"ошибка скрипта {path}: {error}\n", True)
             return
-        self.show(f"Выполнение стартового скрипта: {self.args.script}\n")
+        self.show(f"Выполняется скрипт: {path}\n")
         self.next_step()
 
     def next_step(self):
