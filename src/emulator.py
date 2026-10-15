@@ -135,6 +135,7 @@ class Shell:
         return f"{kind} {owner} {group} {size:>6} {label}"
 
     def cmd_ls(self, args):
+        debug_info = f"[debug] ls: {args}"
         long_format = False
         paths = []
         for arg in args:
@@ -150,8 +151,8 @@ class Shell:
         node = self.lookup(path)
         parts = self.resolve(path)
         if not isinstance(node, dict):
-            return Result(self.ls_line(path, parts, node, long_format))
-        lines = []
+            return Result(f"{debug_info}\n{self.ls_line(path, parts, node, long_format)}")
+        lines = [debug_info]
         for name, child in sorted(node.items()):
             label = name + "/" if isinstance(child, dict) else name
             line = self.ls_line(label, parts + [name], child, long_format)
@@ -159,13 +160,14 @@ class Shell:
         return Result("\n".join(lines))
 
     def cmd_cd(self, args):
+        debug_info = f"[debug] cd: {args}"
         if args[1:]:
             raise CommandError(TOO_MANY)
         path = args[0] if args else ROOT
         if not isinstance(self.lookup(path), dict):
             raise CommandError(f"{path}: не каталог")
         self.cwd = self.full_path(self.resolve(path))
-        return Result("")
+        return Result(debug_info)
 
     def cmd_echo(self, args):
         return Result(" ".join(args))
